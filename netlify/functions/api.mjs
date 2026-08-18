@@ -1,4 +1,3 @@
-
 // Dirt Ticket — the entire backend in one file.
 //
 // Serves three endpoints and exports the scrape routine for the cron function:
@@ -157,6 +156,13 @@ async function discoverDatasets(budget, log) {
         if (!r.id || have.has(domain + r.id)) continue;
         if (!name.includes("permit")) continue;
         if (["summary", "dashboard", "count", "monthly"].some((x) => name.includes(x))) continue;
+        // Skip year-stamped archives — a dataset called "Building Permits 2019"
+        // will happily return 200 rows and every one of them is dead.
+        const yr = name.match(/(20\d\d)/);
+        if (yr && Number(yr[1]) < new Date().getFullYear() - 1) {
+          log(`skipping archive: ${r.name}`);
+          continue;
+        }
         have.add(domain + r.id);
         found.push({ city, domain, dataset: r.id, label: r.name });
       }
@@ -214,6 +220,8 @@ async function scrapePermits(seen, budget, log, datasets) {
     }
 
     let kept = 0;
+    let stale = 0;
+    const cut = Date.now() - 60 * 864e5;
     for (const row of rows) {
       const desc = String(row[roles.desc] ?? "").trim();
       const ptype = String(row[roles.ptype] ?? "").trim();
@@ -239,6 +247,9 @@ async function scrapePermits(seen, budget, log, datasets) {
       if (value) bits.push(`Value: $${value}`);
       if (addr) bits.push(addr);
 
+      const when = normalizeDate(String(row[roles.issued] ?? ""), row[":updated_at"]);
+      if (Date.parse(when) < cut) stale++;
+
       out.push({
         id: leadId(key, desc),
         title: (desc || ptype).slice(0, 130),
@@ -246,14 +257,19 @@ async function scrapePermits(seen, budget, log, datasets) {
         url: `https://${domain}/d/${dataset}`,
         source: "Permits",
         location: `${city} ${zip}`.trim(),
-        posted: normalizeDate(String(row[roles.issued] ?? ""), row[":updated_at"]),
+        posted: when,
         score: tier,
         matched: [label, ptype.slice(0, 28)].filter(Boolean),
         phone,
         contractor: name,
       });
     }
-    if (kept) log(`${city}/${dataset}: ${kept}`);
+    const tag = src.label ? `${city} · ${src.label}` : `${city}/${dataset}`;
+    if (kept) {
+      log(stale >= kept
+        ? `${tag}: ${kept} matched but ALL older than 60 days — archive dataset`
+        : `${tag}: ${kept} matched, ${kept - stale} recent`);
+    }
   }
   return out;
 }
@@ -488,8 +504,8 @@ async function runScrape({ budgetMs = 22000 } = {}) {
   let fresh = [];
 
   // 1. Permits first — highest value per request. Two datasets per run.
-  const ds = slice(state.datasets, state.dsCursor, 2);
-  state.dsCursor = (state.dsCursor + 2) % Math.max(state.datasets.length, 1);
+  const ds = slice(state.datasets, state.dsCursor, 4);
+  state.dsCursor = (state.dsCursor + 4) % Math.max(state.datasets.length, 1);
   fresh = fresh.concat(await scrapePermits(seen, budget, say, ds));
 
   // 2. Public bids — one request, always worth it.
@@ -500,7 +516,11 @@ async function runScrape({ budgetMs = 22000 } = {}) {
   const cCombos = triples(CL_SITES, CL_SECTIONS, CL_QUERIES);
 
   fresh = fresh.concat(await scrapeReddit(seen, budget, say, slice(rPairs, state.cursor * 4, 4)));
-  fresh = fresh.concat(await scrapeCraigslist(seen, budget, say, slice(cCombos, state.cursor * 4, 4)));
+  // Craigslist 403s every request from a datacenter IP and there is no auth
+  // path around it. Off by default; set CRAIGSLIST=1 to try anyway.
+  if (process.env.CRAIGSLIST === "1") {
+    fresh = fresh.concat(await scrapeCraigslist(seen, budget, say, slice(cCombos, state.cursor * 4, 4)));
+  }
   state.cursor = (state.cursor + 1) % 500;
 
   // merge, age out, cap
