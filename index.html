@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Dirt Ticket — DFW wall &amp; dirt work leads</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#17191b;
+    --asphalt:#2c3033;
+    --concrete:#e4e2dd;
+    --paper:#f7f6f3;
+    --card:#ffffff;
+    --hi:#f2b705;        /* safety yellow */
+    --hot:#b4432a;       /* rust stamp */
+    --mute:#71767a;
+    --line:#d3d0ca;
+    --ok:#2f6d4f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    overflow-x:hidden;
+    background:var(--concrete);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-size:15px;line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:820px;margin:0 auto;padding:0 14px 64px}
+
+  /* ---- masthead: stencilled tailgate ---- */
+  header{background:var(--ink);color:#fff;padding:20px 0 0;position:relative}
+  .hdr-inner{max-width:820px;margin:0 auto;padding:0 20px}
+  .brand{
+    font-family:'Barlow Condensed',sans-serif;font-weight:700;
+    font-size:44px;line-height:.92;letter-spacing:.01em;text-transform:uppercase;margin:0;
+  }
+  .brand span{color:var(--hi)}
+  .tagline{
+    font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;
+    text-transform:uppercase;color:#9aa0a4;margin:7px 0 16px;
+  }
+  .hazard{height:9px;
+    background:repeating-linear-gradient(-45deg,var(--hi) 0 14px,var(--ink) 14px 28px);}
+
+  /* ---- status strip ---- */
+  .stripband{background:var(--asphalt)}
+  .strip{
+    max-width:820px;margin:0 auto;color:#fff;padding:9px 20px;
+    display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  }
+  .strip b{color:var(--hi);font-weight:600}
+  .strip .sync{margin-left:auto;color:var(--hi);cursor:pointer;text-decoration:underline;
+    text-underline-offset:3px;-webkit-tap-highlight-color:transparent}
+
+  /* ---- filters ---- */
+  .filters{display:flex;gap:6px;overflow-x:auto;padding:14px 0 4px;-webkit-overflow-scrolling:touch}
+  .filters::-webkit-scrollbar{display:none}
+  .chip{
+    flex:0 0 auto;border:1.5px solid var(--ink);background:transparent;color:var(--ink);
+    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;letter-spacing:.06em;
+    text-transform:uppercase;padding:7px 11px;cursor:pointer;border-radius:0;
+  }
+  .chip[aria-pressed="true"]{background:var(--ink);color:var(--hi)}
+  .chip:focus-visible{outline:3px solid var(--hi);outline-offset:2px}
+
+  /* ---- ticket cards ---- */
+  .ticket{
+    background:var(--card);border:1.5px solid var(--ink);margin:12px 0;position:relative;
+    box-shadow:3px 3px 0 rgba(23,25,27,.14);
+  }
+  .ticket.done{opacity:.5}
+  .perf{height:6px;background:
+    radial-gradient(circle at 5px 0, transparent 0 4px, var(--ink) 4px) repeat-x;
+    background-size:12px 6px;opacity:.25}
+  .t-head{display:flex;align-items:center;gap:8px;padding:9px 12px 0}
+  .src{
+    font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.12em;
+    text-transform:uppercase;background:var(--ink);color:var(--hi);padding:3px 7px;
+  }
+  .no{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--mute);margin-left:auto}
+  .stamp{
+    font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:13px;letter-spacing:.1em;
+    text-transform:uppercase;border:2px solid var(--hot);color:var(--hot);padding:1px 6px;
+    transform:rotate(-4deg);
+  }
+  .stamp.warm{border-color:var(--mute);color:var(--mute)}
+  .t-title{
+    font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:22px;line-height:1.13;
+    margin:8px 12px 4px;
+  }
+  .t-body{margin:0 12px 10px;font-size:13.5px;color:#3a3e41}
+  .t-meta{
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--mute);
+    margin:0 12px 10px;letter-spacing:.04em;
+  }
+  .kw{display:inline-block;background:#f0eee9;border:1px solid var(--line);
+    font-family:'IBM Plex Mono',monospace;font-size:9.5px;padding:1px 5px;margin:0 3px 3px 0;color:#4a4e51}
+  .t-actions{display:flex;border-top:1.5px solid var(--ink)}
+  .t-actions a,.t-actions button{
+    flex:1;text-align:center;padding:11px 4px;border:0;background:transparent;cursor:pointer;
+    font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--ink);text-decoration:none;border-right:1.5px solid var(--ink);
+  }
+  .t-actions > *:last-child{border-right:0}
+  .t-actions .open{background:var(--hi)}
+  .t-actions .call{background:var(--ok);color:#fff}
+  .t-actions button:hover{background:#f0eee9}
+  .t-actions button.on{background:var(--ok);color:#fff}
+  .t-actions *:focus-visible{outline:3px solid var(--hot);outline-offset:-3px}
+
+  /* ---- reply drawer ---- */
+  .reply{display:none;border-top:1.5px dashed var(--line);padding:11px 12px;background:#fbfaf8}
+  .reply.open{display:block}
+  .reply .status{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.07em;
+    text-transform:uppercase;color:var(--mute);margin-bottom:6px;min-height:13px}
+  .reply .status.err{color:var(--hot)}
+  .reply textarea{
+    width:100%;min-height:110px;border:1.5px solid var(--line);padding:9px;
+    font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.5;resize:vertical;background:#fff;color:var(--ink);
+  }
+  .copy{margin-top:8px;background:var(--ink);color:var(--hi);border:0;padding:9px 14px;cursor:pointer;
+    font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+
+  /* ---- manual sweep ---- */
+  .sweep{border:1.5px solid var(--ink);background:var(--paper);margin:26px 0 0}
+  .sweep h2{
+    font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;text-transform:uppercase;
+    letter-spacing:.03em;margin:0;padding:11px 12px;background:var(--ink);color:#fff;
+  }
+  .sweep p{margin:11px 12px;font-size:13px;color:#3a3e41}
+  .sweep a.man{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:11px 12px;border-top:1px solid var(--line);text-decoration:none;color:var(--ink);
+    font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:600;
+  }
+  .sweep a.man span{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--mute);letter-spacing:.08em;text-transform:uppercase}
+  .sweep a.man:hover{background:var(--hi)}
+
+  .empty{border:1.5px dashed var(--ink);padding:26px 16px;text-align:center;margin:14px 0;background:var(--paper)}
+  .empty h3{font-family:'Barlow Condensed',sans-serif;font-size:22px;text-transform:uppercase;margin:0 0 6px}
+  .empty p{margin:0;font-size:13px;color:var(--mute)}
+
+  footer{margin-top:30px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--mute);
+    letter-spacing:.06em;text-transform:uppercase;text-align:center}
+
+  @media (prefers-reduced-motion:no-preference){
+    .ticket{animation:drop .28s ease-out both}
+    @keyframes drop{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+  }
+  @media (max-width:400px){ .brand{font-size:36px} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hdr-inner">
+    <h1 class="brand">Dirt<span>/</span>Ticket</h1>
+    <div class="tagline">DFW retaining walls &middot; excavation &middot; hauling</div>
+  </div>
+  <div class="hazard"></div>
+</header>
+
+<div class="stripband">
+  <div class="strip">
+    <div><b id="ct-hot">0</b> hot</div>
+    <div><b id="ct-all">0</b> open</div>
+    <div><b id="ct-called">0</b> called</div>
+    <div class="sync" id="sync">loading…</div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="filters" id="filters"></div>
+  <div id="board"></div>
+
+  <section class="sweep">
+    <h2>Manual sweep</h2>
+    <p>Facebook and Nextdoor block automated access, so these can't be scraped. They're the highest-intent sources in the market anyway — searches are pre-built, run them with coffee.</p>
+    <a class="man" href="https://www.facebook.com/marketplace/search/?query=retaining%20wall" target="_blank" rel="noopener">Marketplace — retaining wall <span>Facebook</span></a>
+    <a class="man" href="https://www.facebook.com/search/posts/?q=retaining%20wall%20quote%20dfw" target="_blank" rel="noopener">Post search — wall quotes <span>Facebook</span></a>
+    <a class="man" href="https://nextdoor.com/search/posts/?query=retaining%20wall" target="_blank" rel="noopener">Neighborhood posts <span>Nextdoor</span></a>
+    <a class="man" href="https://www.thumbtack.com/pro" target="_blank" rel="noopener">New job requests <span>Thumbtack Pro</span></a>
+    <a class="man" href="https://ntsbdc.org/bid-opportunities/" target="_blank" rel="noopener">DFW public bid board <span>NT SBDC</span></a>
+  </section>
+
+  <footer>Dirt Ticket &middot; refresh runs hourly</footer>
+</div>
+
+<script>
+/* tolerant storage: works on Netlify, degrades to memory anywhere it's blocked */
+const store = (() => {
+  const mem = {};
+  try { localStorage.setItem('__t','1'); localStorage.removeItem('__t');
+        return { get:k=>localStorage.getItem(k), set:(k,v)=>localStorage.setItem(k,v) }; }
+  catch { return { get:k=>mem[k]??null, set:(k,v)=>{mem[k]=v;} }; }
+})();
+
+const SOURCES = ['All','Permits','Bids','Craigslist','Reddit'];
+let LEADS = [], filter = 'All';
+let status = JSON.parse(store.get('dt-status') || '{}');
+
+const saveStatus = () => store.set('dt-status', JSON.stringify(status));
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function ago(iso){
+  const d = (Date.now() - new Date(iso)) / 6e4;
+  if (isNaN(d)) return '';
+  if (d < 60) return Math.max(1, Math.round(d)) + 'm ago';
+  if (d < 1440) return Math.round(d/60) + 'h ago';
+  return Math.round(d/1440) + 'd ago';
+}
+
+function template(l){
+  return `Hi — saw your post about ${String(l.title||'').toLowerCase().slice(0,60)}.
+
+We build segmental retaining walls and handle the dirt work across DFW — excavation, hauling, drainage, and backfill, all in-house. Fully insured.
+
+Happy to come look at it and give you a firm number, no charge. What does your week look like?
+
+— [NAME], [COMPANY]
+[PHONE]`;
+}
+
+function render(){
+  const board = document.getElementById('board');
+  const list = LEADS
+    .filter(l => filter === 'All' || (l.source || 'Other') === filter)
+    .filter(l => status[l.id] !== 'dead')
+    .sort((a,b) => (b.score||0) - (a.score||0) || new Date(b.posted) - new Date(a.posted));
+
+  document.getElementById('ct-all').textContent = LEADS.filter(l => status[l.id] !== 'dead').length;
+  document.getElementById('ct-hot').textContent = LEADS.filter(l => (l.score||0) >= 7 && !status[l.id]).length;
+  document.getElementById('ct-called').textContent = Object.values(status).filter(v => v === 'called').length;
+
+  if (!list.length){
+    board.innerHTML = `<div class="empty"><h3>Nothing in this bin</h3>
+      <p>Tap the status bar above to run a scrape, or work the manual sweep below.</p></div>`;
+    return;
+  }
+
+  board.innerHTML = list.map((l, i) => {
+    const called = status[l.id] === 'called';
+    const hot = (l.score || 0) >= 7;
+    return `
+    <article class="ticket ${called ? 'done' : ''}">
+      <div class="perf"></div>
+      <div class="t-head">
+        <span class="src">${esc(l.source || 'Other')}</span>
+        <span class="stamp ${hot ? '' : 'warm'}">${hot ? 'Hot' : 'Warm'}</span>
+        <span class="no">No. ${String(i + 1).padStart(3, '0')}</span>
+      </div>
+      <h2 class="t-title">${esc(l.title)}</h2>
+      <p class="t-body">${esc(l.snippet)}</p>
+      <div class="t-meta">${esc(l.location || 'DFW')} &nbsp;·&nbsp; ${ago(l.posted)}<br>
+        ${(l.matched || []).map(k => `<span class="kw">${esc(k)}</span>`).join('')}</div>
+      <div class="t-actions">
+        ${l.phone ? `<a class="call" href="tel:${esc(l.phone.replace(/[^0-9+]/g,''))}">Call</a>` : ''}
+        <a class="open" href="${esc(l.url)}" target="_blank" rel="noopener">Open post</a>
+        <button data-reply="${esc(l.id)}">Reply</button>
+        <button class="${called ? 'on' : ''}" data-called="${esc(l.id)}">${called ? 'Called ✓' : 'Called'}</button>
+        <button data-dead="${esc(l.id)}">Junk</button>
+      </div>
+      <div class="reply" id="r-${esc(l.id)}">
+        <div class="status" id="s-${esc(l.id)}"></div>
+        <textarea>${esc(template(l))}</textarea>
+        <button class="copy" data-draft="${esc(l.id)}">Write with AI</button>
+        <button class="copy" data-copy="${esc(l.id)}">Copy message</button>
+      </div>
+    </article>`;
+  }).join('');
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.reply)  document.getElementById('r-' + t.dataset.reply).classList.toggle('open');
+  if (t.dataset.called){ const id = t.dataset.called;
+    status[id] = status[id] === 'called' ? undefined : 'called'; saveStatus(); render(); }
+  if (t.dataset.dead){ status[t.dataset.dead] = 'dead'; saveStatus(); render(); }
+  if (t.dataset.draft){
+    const id = t.dataset.draft;
+    const lead = LEADS.find(l => l.id === id);
+    const box = document.querySelector('#r-' + CSS.escape(id) + ' textarea');
+    const stat = document.getElementById('s-' + id);
+    t.disabled = true; t.textContent = 'Writing…'; stat.className = 'status'; stat.textContent = '';
+    fetch('/api/draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(lead)
+    })
+      .then(r => r.json().then(d => { if (!r.ok) throw new Error(d.error || r.status); return d; }))
+      .then(d => { box.value = d.message; stat.textContent = 'Drafted — read it before you send'; })
+      .catch(e => {
+        stat.className = 'status err';
+        stat.textContent = String(e.message).includes('ANTHROPIC')
+          ? 'Add ANTHROPIC_API_KEY in Netlify to enable this'
+          : 'Draft failed — the template above still works';
+      })
+      .finally(() => { t.disabled = false; t.textContent = 'Write with AI'; });
+  }
+  if (t.dataset.copy){
+    const ta = document.querySelector('#r-' + CSS.escape(t.dataset.copy) + ' textarea');
+    ta.select(); document.execCommand('copy');
+    t.textContent = 'Copied'; setTimeout(() => t.textContent = 'Copy message', 1400);
+  }
+});
+
+document.getElementById('filters').innerHTML = SOURCES.map(s =>
+  `<button class="chip" aria-pressed="${s === 'All'}" data-f="${s}">${s}</button>`).join('');
+document.getElementById('filters').addEventListener('click', e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  filter = b.dataset.f;
+  document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', c === b));
+  render();
+});
+
+// Leads come from /api/leads, which reads whatever the last scrape stored.
+function load(){
+  const sync = document.getElementById('sync');
+  sync.textContent = 'loading…';
+  fetch('/api/leads', { cache: 'no-store' })
+    .then(r => r.json())
+    .then(d => {
+      LEADS = d.leads || [];
+      sync.textContent = LEADS.length
+        ? 'updated ' + ago(d.generated)
+        : 'no leads yet — tap to scrape';
+      render();
+    })
+    .catch(() => { sync.textContent = 'tap to scrape'; render(); });
+}
+
+// Tapping the status runs a scrape on demand.
+document.getElementById('sync').addEventListener('click', () => {
+  const sync = document.getElementById('sync');
+  sync.textContent = 'scraping…';
+  fetch('/api/scrape')
+    .then(r => r.json())
+    .then(d => {
+      sync.textContent = d.error ? 'scrape failed' : `found ${d.found} in ${Math.round(d.ms/1000)}s`;
+      if (!d.error) setTimeout(load, 800);
+    })
+    .catch(() => { sync.textContent = 'scrape failed'; });
+});
+
+load();
+</script>
+</body>
+</html>
