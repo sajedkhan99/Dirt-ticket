@@ -1,3 +1,4 @@
+
 // Dirt Ticket — the entire backend in one file.
 //
 // Serves three endpoints and exports the scrape routine for the cron function:
@@ -203,7 +204,10 @@ async function scrapePermits(seen, budget, log, datasets) {
 
     let rows;
     try {
-      rows = await get(roles.issued ? `${base}&$order=${roles.issued} DESC` : base, { headers: socrataHeaders() });
+      // :updated_at is a Socrata system field and always a real timestamp.
+      // The city's own "issued" column is often plain text (08/14/26), which
+      // sorts alphabetically by month and returns archive records at random.
+      rows = await get(`${base}&$order=:updated_at DESC`, { headers: socrataHeaders() });
     } catch {
       try { rows = await get(base, { headers: socrataHeaders() }); }
       catch (e) { log(`${city}/${dataset}: query ${e.message}`); continue; }
@@ -242,7 +246,7 @@ async function scrapePermits(seen, budget, log, datasets) {
         url: `https://${domain}/d/${dataset}`,
         source: "Permits",
         location: `${city} ${zip}`.trim(),
-        posted: normalizeDate(String(row[roles.issued] ?? "")),
+        posted: normalizeDate(String(row[roles.issued] ?? ""), row[":updated_at"]),
         score: tier,
         matched: [label, ptype.slice(0, 28)].filter(Boolean),
         phone,
@@ -254,8 +258,8 @@ async function scrapePermits(seen, budget, log, datasets) {
   return out;
 }
 
-function normalizeDate(raw) {
-  if (!raw) return new Date().toISOString();
+function normalizeDate(raw, fallback) {
+  if (!raw) return fallback ? new Date(fallback).toISOString() : new Date().toISOString();
   const iso = Date.parse(raw);
   if (!isNaN(iso)) return new Date(iso).toISOString();
   const m = raw.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
@@ -263,7 +267,7 @@ function normalizeDate(raw) {
     const yr = m[3].length === 2 ? 2000 + +m[3] : +m[3];
     return new Date(Date.UTC(yr, m[1] - 1, +m[2])).toISOString();
   }
-  return new Date().toISOString();
+  return fallback ? new Date(fallback).toISOString() : new Date().toISOString();
 }
 
 // --- public bids ------------------------------------------------------------
@@ -459,7 +463,7 @@ function triples(a, b, c) {
 }
 
 
-const KEEP_DAYS = 14;
+const KEEP_DAYS = 60;
 const MAX_LEADS = 400;
 
 async function runScrape({ budgetMs = 22000 } = {}) {
@@ -502,6 +506,7 @@ async function runScrape({ budgetMs = 22000 } = {}) {
   // merge, age out, cap
   const have = new Set(fresh.map((l) => l.id));
   const cutoff = Date.now() - KEEP_DAYS * 864e5;
+  const beforeAge = fresh.length;
   const merged = [...fresh, ...existing.filter((l) => !have.has(l.id))]
     .filter((l) => {
       const t = Date.parse(l.posted);
@@ -527,6 +532,8 @@ async function runScrape({ budgetMs = 22000 } = {}) {
     log,
   });
 
+  const aged = beforeAge - merged.filter((l) => have.has(l.id)).length;
+  if (aged > 0) say(`aged out ${aged} record(s) older than ${KEEP_DAYS} days`);
   say(`+${fresh.length} new, ${merged.length} total, ${budget.used()}ms`);
   return { found: fresh.length, total: merged.length, ms: budget.used(), log };
 }
@@ -654,4 +661,3 @@ export default async (req) => {
 };
 
 export const config = { path: ["/api/leads", "/api/scrape", "/api/draft"] };
-
