@@ -139,6 +139,14 @@ function socrataHeaders() {
   return tok ? { "X-App-Token": tok } : {};
 }
 
+function isArchive(name) {
+  const low = (name || "").toLowerCase();
+  const yrs = low.match(/20\d\d/g);
+  if (!yrs) return false;
+  // "Fiscal Year 2015 - 2016" — judge by the NEWEST year in the name
+  return Math.max(...yrs.map(Number)) < new Date().getFullYear() - 1;
+}
+
 async function discoverDatasets(budget, log) {
   const found = [{ city: "Dallas", domain: "www.dallasopendata.com", dataset: "e7gq-4sah" }];
   const have = new Set(found.map((d) => d.domain + d.dataset));
@@ -158,11 +166,7 @@ async function discoverDatasets(budget, log) {
         if (["summary", "dashboard", "count", "monthly"].some((x) => name.includes(x))) continue;
         // Skip year-stamped archives — a dataset called "Building Permits 2019"
         // will happily return 200 rows and every one of them is dead.
-        const yr = name.match(/(20\d\d)/);
-        if (yr && Number(yr[1]) < new Date().getFullYear() - 1) {
-          log(`skipping archive: ${r.name}`);
-          continue;
-        }
+        if (isArchive(r.name)) { log(`skipping archive: ${r.name}`); continue; }
         have.add(domain + r.id);
         found.push({ city, domain, dataset: r.id, label: r.name });
       }
@@ -199,7 +203,11 @@ async function scrapePermits(seen, budget, log, datasets) {
 
     let roles;
     try { roles = await discoverSchema(domain, dataset); }
-    catch (e) { log(`${city}/${dataset}: schema ${e.message}`); continue; }
+    catch (e) {
+      log(`${city}/${dataset}: schema ${e.message}${e.message === "404" ? " — not on this portal, dropping" : ""}`);
+      if (e.message === "404") dead[domain + dataset] = 1;
+      continue;
+    }
     if (!roles.desc && !roles.ptype) continue;
 
     const targets = ["desc", "ptype"].filter((k) => roles[k]).map((k) => roles[k]);
@@ -260,6 +268,16 @@ async function scrapePermits(seen, budget, log, datasets) {
         posted: when,
         score: tier,
         matched: [label, ptype.slice(0, 28)].filter(Boolean),
+        body: [
+          desc,
+          "",
+          ptype ? `Permit type: ${ptype}` : "",
+          permitNo ? `Permit no: ${permitNo}` : "",
+          addr ? `Address: ${addr}${zip ? " " + zip : ""}` : "",
+          value ? `Declared value: $${value}` : "",
+          contractor ? `Contractor of record: ${contractor}` : "",
+          phone ? `Phone: ${phone}` : "",
+        ].filter(Boolean).join("\n"),
         phone,
         contractor: name,
       });
@@ -267,7 +285,8 @@ async function scrapePermits(seen, budget, log, datasets) {
     const tag = src.label ? `${city} · ${src.label}` : `${city}/${dataset}`;
     if (kept) {
       log(stale >= kept
-        ? `${tag}: ${kept} matched but ALL older than 60 days — archive dataset`
+        ? (dead[domain + dataset] = 1,
+           `${tag}: ${kept} matched but ALL older than 60 days — dataset is not maintained, dropping`)
         : `${tag}: ${kept} matched, ${kept - stale} recent`);
     }
   }
@@ -309,9 +328,9 @@ async function scrapeBids(seen, budget, log) {
     const low = b.toLowerCase();
     if (!BID_TERMS.some((t) => low.includes(t))) continue;
 
-    const grab = (label, next) => {
+    const grab = (label, next, max = 200) => {
       const m = b.match(new RegExp(`${label}:\\s*([\\s\\S]+?)(?=\\s*${next}:|\\n\\n|$)`, "i"));
-      return m ? m[1].replace(/\s+/g, " ").trim().slice(0, 200) : "";
+      return m ? m[1].replace(/\s+/g, " ").trim().slice(0, max) : "";
     };
     const title = grab("Project", "Reference No");
     if (!title) continue;
@@ -320,7 +339,8 @@ async function scrapeBids(seen, budget, log) {
     if (seen[key]) continue;
     seen[key] = 1;
 
-    const desc = grab("Project Description", "Details");
+    const desc = grab("Project Description", "Details", 3000);
+    const refNo = grab("Reference No", "Location", 60);
     const [pts, hits] = score(`${title} ${desc}`);
     const link = b.match(/https?:\/\/[^\s"'<>]+/);
     const close = grab("Bid Close Date", "Project Description");
@@ -329,6 +349,12 @@ async function scrapeBids(seen, budget, log) {
       id: leadId(key, title),
       title: title.slice(0, 130),
       snippet: (close ? `Closes ${close}. ` : "") + desc.slice(0, 230),
+      body: [
+        refNo ? `Reference: ${refNo}` : "",
+        close ? `Bids close: ${close}` : "",
+        "",
+        desc,
+      ].filter((x) => x !== null).join("\n"),
       url: link ? link[0] : BID_URL,
       source: "Bids",
       location: grab("Location", "Bid Close Date").replace("City of ", "") || "DFW",
@@ -374,8 +400,12 @@ async function redditToken() {
 }
 
 async function scrapeReddit(seen, budget, log, pairs) {
+  const haveId = !!process.env.REDDIT_ID, haveSec = !!process.env.REDDIT_SECRET;
   const tok = await redditToken();
-  if (!tok) log("reddit: no OAuth creds — cloud IPs are often blocked without them");
+  if (!tok) {
+    log(`reddit: no token — REDDIT_ID ${haveId ? "present" : "MISSING"}, REDDIT_SECRET ${haveSec ? "present" : "MISSING"}`);
+    if (haveId && haveSec) log("reddit: creds present but auth failed — check for a typo or a stray space");
+  }
   const out = [];
 
   for (const [sub, q] of pairs) {
@@ -401,6 +431,12 @@ async function scrapeReddit(seen, budget, log, pairs) {
         id: leadId(url, p.title),
         title: p.title,
         snippet: (p.selftext || "").replace(/\s+/g, " ").slice(0, 280),
+        body: [
+          `Posted by u/${p.author || "unknown"} in r/${sub}`,
+          p.num_comments ? `${p.num_comments} comment(s)` : "",
+          "",
+          (p.selftext || "").slice(0, 4000) || "(no post text — title only)",
+        ].filter(Boolean).join("\n"),
         url,
         source: "Reddit",
         location: guessLocation(blob),
@@ -491,6 +527,7 @@ async function runScrape({ budgetMs = 22000 } = {}) {
 
   const seen = (await store.get("seen", { type: "json" })) || {};
   const state = (await store.get("state", { type: "json" })) || { cursor: 0, datasets: null, dsCursor: 0 };
+  state.dead = state.dead || {};
   const existing = (await store.get("leads", { type: "json" })) || [];
 
   // Permit datasets change rarely — discover once, reuse for a day.
@@ -506,7 +543,9 @@ async function runScrape({ budgetMs = 22000 } = {}) {
   // 1. Permits first — highest value per request. Two datasets per run.
   const ds = slice(state.datasets, state.dsCursor, 4);
   state.dsCursor = (state.dsCursor + 4) % Math.max(state.datasets.length, 1);
-  fresh = fresh.concat(await scrapePermits(seen, budget, say, ds));
+  fresh = fresh.concat(await scrapePermits(seen, budget, say, ds, state.dead));
+  const liveLeft = (state.datasets || []).filter((d) => !state.dead[d.domain + d.dataset]).length;
+  say(`${liveLeft} permit dataset(s) still live`);
 
   // 2. Public bids — one request, always worth it.
   fresh = fresh.concat(await scrapeBids(seen, budget, say));
