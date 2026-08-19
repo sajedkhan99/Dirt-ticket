@@ -523,6 +523,122 @@ async function scrapeAlerts(seen, budget, log) {
   return out;
 }
 
+// --- keyless web search ------------------------------------------------------
+// Google's API needs a Cloud console key. These don't need anything at all.
+// Three providers are tried in order; the first that answers wins, and the log
+// says which one worked so there is no guessing.
+
+async function searchBing(q) {
+  // Bing still serves any search as RSS. No key, no quota, no account.
+  const xml = await get(
+    `https://www.bing.com/search?q=${encodeURIComponent(q)}&format=rss&count=20`,
+    { json: false, timeout: 9000 }
+  );
+  const out = [];
+  for (const item of xml.match(/<item>[\s\S]*?<\/item>/g) || []) {
+    const tag = (n) => {
+      const m = item.match(new RegExp(`<${n}>([\\s\\S]*?)</${n}>`));
+      if (!m) return "";
+      return m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+                 .replace(/<[^>]+>/g, "")
+                 .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+                 .trim();
+    };
+    const title = tag("title"), link = tag("link"), snippet = tag("description");
+    if (title && link) out.push({ title, link, snippet });
+  }
+  return out;
+}
+
+async function searchDuck(q) {
+  // DuckDuckGo's no-JS endpoint returns plain HTML.
+  const html = await get(
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
+    { json: false, timeout: 9000 }
+  );
+  const out = [];
+  const re = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+  let m;
+  while ((m = re.exec(html)) && out.length < 20) {
+    let link = m[1];
+    const real = link.match(/[?&]uddg=([^&]+)/);
+    if (real) link = decodeURIComponent(real[1]);
+    const strip = (x) => x.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
+    out.push({ title: strip(m[2]), link, snippet: strip(m[3]) });
+  }
+  return out;
+}
+
+async function searchGoogleApi(q) {
+  const key = process.env.GOOGLE_KEY, cx = process.env.GOOGLE_CX;
+  if (!key || !cx) throw new Error("no key");
+  const data = await get("https://www.googleapis.com/customsearch/v1"
+    + `?key=${key}&cx=${cx}&q=${encodeURIComponent(q)}&num=10&dateRestrict=m3`);
+  return (data.items || []).map((i) => ({ title: i.title, link: i.link, snippet: i.snippet }));
+}
+
+const PROVIDERS = [
+  ["google", searchGoogleApi],   // best results, only if a key exists
+  ["bing", searchBing],          // no key
+  ["duckduckgo", searchDuck],    // no key
+];
+
+async function scrapeWeb(seen, budget, log, queries) {
+  const out = [];
+  let working = null;
+
+  for (const q of queries) {
+    if (!budget.ok(4000)) { log("web search: out of time"); break; }
+
+    let results = null;
+    const order = working ? [working, ...PROVIDERS.filter((p) => p !== working)] : PROVIDERS;
+
+    for (const prov of order) {
+      const [name, fn] = prov;
+      try {
+        results = await fn(q);
+        if (results && results.length) {
+          if (working !== prov) log(`web search via ${name}`);
+          working = prov;
+          break;
+        }
+      } catch (e) {
+        if (name !== "google" || e.message !== "no key") log(`${name}: ${e.message}`);
+        results = null;
+      }
+    }
+
+    if (!results || !results.length) continue;
+
+    for (const item of results) {
+      if (!item.link || seen[item.link] || !googleUseful(item)) continue;
+      const blob = `${item.title} ${item.snippet || ""}`;
+      const [pts, hits] = score(blob);
+      if (pts < 5) continue;
+      seen[item.link] = 1;
+
+      let host = "";
+      try { host = new URL(item.link).hostname.replace("www.", ""); } catch {}
+
+      out.push({
+        id: leadId(item.link, item.title),
+        title: item.title.slice(0, 130),
+        snippet: (item.snippet || "").replace(/\s+/g, " ").slice(0, 280),
+        body: [item.snippet || "", "", `Source page: ${host}`, `Found searching: ${q}`].join("\n"),
+        url: item.link,
+        source: "Web",
+        location: guessLocation(blob),
+        posted: new Date().toISOString(),
+        score: pts,
+        matched: hits,
+      });
+    }
+  }
+
+  if (!working) log("web search: all providers blocked from this server");
+  return out;
+}
+
 // --- craigslist -------------------------------------------------------------
 
 const CL_SITES = ["dallas", "fortworth"];
@@ -632,7 +748,7 @@ async function runScrape({ budgetMs = 22000 } = {}) {
   const cCombos = triples(CL_SITES, CL_SECTIONS, CL_QUERIES);
 
   // 3. Google - the only source that reaches homeowners asking publicly.
-  fresh = fresh.concat(await scrapeGoogle(seen, budget, say, slice(GOOGLE_QUERIES, state.cursor * 2, 2)));
+  fresh = fresh.concat(await scrapeWeb(seen, budget, say, slice(GOOGLE_QUERIES, state.cursor * 2, 2)));
   fresh = fresh.concat(await scrapeAlerts(seen, budget, say));
 
   // Reddit removed: the API now requires registering an automated account, and
