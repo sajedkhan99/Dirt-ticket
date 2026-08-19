@@ -395,14 +395,21 @@ async function scrapeBids(seen, budget, log) {
 
 // Phrases a HOMEOWNER types, not a contractor. Quoted so Google matches exactly.
 const GOOGLE_QUERIES = [
-  'retaining wall contractor recommendations Dallas Fort Worth forum',
-  'retaining wall failing OR "washing out" OR leaning backyard Texas help',
-  'need retaining wall built Frisco OR McKinney OR Plano OR Prosper',
-  'reddit retaining wall quote Dallas Texas',
-  'need dirt hauled off OR haul away dirt Dallas Fort Worth',
-  'retaining wall replacement advice north Texas homeowner',
-  'grading drainage backyard erosion contractor DFW recommendations',
-  'nextdoor OR reddit "retaining wall" Texas who to call',
+  'site:reddit.com "retaining wall" (Dallas OR Frisco OR Plano OR McKinney OR "Fort Worth")',
+  'site:reddit.com retaining wall quote cost Texas',
+  'site:reddit.com (dirt hauled OR haul off dirt OR fill dirt) Texas',
+  'site:city-data.com retaining wall Dallas OR "Fort Worth" OR Plano',
+  'site:reddit.com backyard erosion OR "washing out" OR grading Texas',
+  'site:diychatroom.com retaining wall',
+  'site:houzz.com/discussions retaining wall Texas',
+  'site:reddit.com r/Dallas OR r/FortWorth contractor recommendation wall',
+];
+
+// Domains where people ASK. Anything from here skips the intent filter -
+// the whole page type is demand, not advertising.
+const DISCUSSION_SITES = [
+  "reddit.com", "city-data.com", "diychatroom.com", "houzz.com/discussions",
+  "nextdoor.com", "quora.com", "forum", "community", "answers", "thread",
 ];
 
 // Junk domains - supply-side pages, not people asking for work.
@@ -421,10 +428,11 @@ function googleUseful(item, pts) {
   const url = (item.link || "").toLowerCase();
   if (GOOGLE_BLOCK.some((b) => url.includes(b))) return "blocked domain";
   const blob = `${item.title || ""} ${item.snippet || ""}`.toLowerCase();
-  // discussion pages are where people ask; keep them even without a trigger word
-  const isDiscussion = /reddit|forum|nextdoor|city-data|quora|community|thread|answers/.test(url);
+
+  // A thread on a discussion site IS someone asking. No trigger word needed.
+  if (DISCUSSION_SITES.some((d) => url.includes(d))) return null;
+
   if (ASKING.some((a) => blob.includes(a))) return null;
-  if (isDiscussion && pts >= 5) return null;
   return "no asking language";
 }
 
@@ -626,7 +634,8 @@ async function scrapeWeb(seen, budget, log, queries) {
       const [pts, hits] = score(blob);
       const why = googleUseful(item, pts);
       if (why) { why === "blocked domain" ? blocked++ : noAsk++; continue; }
-      if (pts < 4) { lowScore++; continue; }
+      const isDisc = DISCUSSION_SITES.some((d) => item.link.toLowerCase().includes(d));
+      if (pts < (isDisc ? 2 : 4)) { lowScore++; continue; }
       seen[item.link] = 1;
 
       let host = "";
