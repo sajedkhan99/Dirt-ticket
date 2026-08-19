@@ -116,6 +116,13 @@
   .t-actions *:focus-visible{outline:3px solid var(--hot);outline-offset:-3px}
 
   /* ---- reply drawer ---- */
+  .full{display:none;border-top:1px dashed var(--line);background:#fbfaf8;
+    padding:11px 12px;font-size:13.5px;line-height:1.5;color:#2c3033;white-space:pre-wrap;
+    word-break:break-word;max-height:60vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .full.open{display:block}
+  .full .hd{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.11em;
+    text-transform:uppercase;color:var(--mute);margin-bottom:7px;white-space:normal}
+  .t-actions .read{background:var(--ink);color:var(--hi)}
   .reply{display:none;border-top:1.5px dashed var(--line);padding:11px 12px;background:#fbfaf8}
   .reply.open{display:block}
   .reply .status{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.07em;
@@ -262,11 +269,13 @@ function render(){
         ${(l.matched || []).map(k => `<span class="kw">${esc(k)}</span>`).join('')}</div>
       <div class="t-actions">
         ${l.phone ? `<a class="call" href="tel:${esc(l.phone.replace(/[^0-9+]/g,''))}">Call</a>` : ''}
-        <a class="open" href="${esc(l.url)}" target="_blank" rel="noopener">Open post</a>
+        <button class="read" data-full="${esc(l.id)}">Read</button>
+        <a class="open" href="${esc(l.url)}" target="_blank" rel="noopener">Source</a>
         <button data-reply="${esc(l.id)}">Reply</button>
         <button class="${called ? 'on' : ''}" data-called="${esc(l.id)}">${called ? 'Called ✓' : 'Called'}</button>
         <button data-dead="${esc(l.id)}">Junk</button>
       </div>
+      <div class="full" id="f-${esc(l.id)}"><div class="hd">Full listing · ${esc(l.source)} · ${esc(l.location || 'DFW')}</div>${esc(l.body || l.snippet || 'No further detail was published for this listing.')}</div>
       <div class="reply" id="r-${esc(l.id)}">
         <div class="status" id="s-${esc(l.id)}"></div>
         <textarea>${esc(template(l))}</textarea>
@@ -279,6 +288,11 @@ function render(){
 
 document.addEventListener('click', e => {
   const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.full){
+    const el = document.getElementById('f-' + t.dataset.full);
+    el.classList.toggle('open');
+    t.textContent = el.classList.contains('open') ? 'Close' : 'Read';
+  }
   if (t.dataset.reply)  document.getElementById('r-' + t.dataset.reply).classList.toggle('open');
   if (t.dataset.called){ const id = t.dataset.called;
     status[id] = status[id] === 'called' ? undefined : 'called'; saveStatus(); render(); }
