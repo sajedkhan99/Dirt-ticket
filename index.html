@@ -220,7 +220,7 @@ const store = (() => {
   catch { return { get:k=>mem[k]??null, set:(k,v)=>{mem[k]=v;} }; }
 })();
 
-const SOURCES = ['All','Google','Bids','Permits'];
+const SOURCES = ['All','Web','Bids','Permits'];
 let LEADS = [], filter = 'All';
 let status = JSON.parse(store.get('dt-status') || '{}');
 
