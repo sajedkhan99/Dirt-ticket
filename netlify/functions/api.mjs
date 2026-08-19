@@ -195,9 +195,11 @@ async function discoverSchema(domain, dataset) {
   return roles;
 }
 
-async function scrapePermits(seen, budget, log, datasets) {
+async function scrapePermits(seen, budget, log, datasets, dead = {}) {
   const out = [];
   for (const src of datasets) {
+    if (dead[src.domain + src.dataset]) continue;
+    if (isArchive(src.label)) { log(`skipping archive: ${src.label}`); continue; }
     if (!budget.ok(5000)) { log("permits: out of time"); break; }
     const { city, domain, dataset } = src;
 
@@ -237,7 +239,9 @@ async function scrapePermits(seen, budget, log, datasets) {
       if (!tier) continue;
 
       const permitNo = String(row[roles.number] ?? "").trim();
-      const key = `${domain}-${permitNo || desc.slice(0, 50)}`;
+      // NOT scoped by domain: data.texas.gov mirrors city datasets, so the same
+      // permit arrives twice under different portals.
+      const key = `permit-${permitNo || ""}-${desc.slice(0, 60)}-${addrKey(row, roles)}`;
       if (seen[key]) continue;
       seen[key] = 1;
       kept++;
@@ -291,6 +295,10 @@ async function scrapePermits(seen, budget, log, datasets) {
     }
   }
   return out;
+}
+
+function addrKey(row, roles) {
+  return String(row[roles.address] ?? "").trim().toLowerCase().replace(/\s+/g, "");
 }
 
 function normalizeDate(raw, fallback) {
