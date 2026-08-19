@@ -395,12 +395,14 @@ async function scrapeBids(seen, budget, log) {
 
 // Phrases a HOMEOWNER types, not a contractor. Quoted so Google matches exactly.
 const GOOGLE_QUERIES = [
-  '"need a retaining wall" (Dallas OR "Fort Worth" OR Frisco OR McKinney OR Plano)',
-  '"looking for" "retaining wall" contractor DFW recommendations',
-  '"retaining wall" "falling over" OR "washing out" Dallas Texas',
-  '"who does retaining walls" Texas',
-  '"need dirt hauled" OR "haul off dirt" Dallas Texas',
-  '"recommendations for" "retaining wall" north Texas',
+  'retaining wall contractor recommendations Dallas Fort Worth forum',
+  'retaining wall failing OR "washing out" OR leaning backyard Texas help',
+  'need retaining wall built Frisco OR McKinney OR Plano OR Prosper',
+  'reddit retaining wall quote Dallas Texas',
+  'need dirt hauled off OR haul away dirt Dallas Fort Worth',
+  'retaining wall replacement advice north Texas homeowner',
+  'grading drainage backyard erosion contractor DFW recommendations',
+  'nextdoor OR reddit "retaining wall" Texas who to call',
 ];
 
 // Junk domains - supply-side pages, not people asking for work.
@@ -411,14 +413,19 @@ const GOOGLE_BLOCK = [
   "pinterest.", "youtube.com", "wikipedia.org", "indeed.com", "ziprecruiter",
 ];
 
-function googleUseful(item) {
+const ASKING = ["need", "looking for", "recommend", "anyone know", "help", "quote",
+  "advice", "who does", "suggestions", "washing out", "falling", "failing", "leaning",
+  "should i", "how much", "any ideas", "thoughts", "worth it", "estimate", "bids"];
+
+function googleUseful(item, pts) {
   const url = (item.link || "").toLowerCase();
-  if (GOOGLE_BLOCK.some((b) => url.includes(b))) return false;
-  // a page that lists services is supply; a page where someone ASKS is demand
+  if (GOOGLE_BLOCK.some((b) => url.includes(b))) return "blocked domain";
   const blob = `${item.title || ""} ${item.snippet || ""}`.toLowerCase();
-  const asking = ["need", "looking for", "recommend", "anyone know", "help", "quote",
-                  "advice", "who does", "suggestions", "washing out", "falling"];
-  return asking.some((a) => blob.includes(a));
+  // discussion pages are where people ask; keep them even without a trigger word
+  const isDiscussion = /reddit|forum|nextdoor|city-data|quora|community|thread|answers/.test(url);
+  if (ASKING.some((a) => blob.includes(a))) return null;
+  if (isDiscussion && pts >= 5) return null;
+  return "no asking language";
 }
 
 async function scrapeGoogle(seen, budget, log, queries) {
@@ -586,6 +593,7 @@ const PROVIDERS = [
 async function scrapeWeb(seen, budget, log, queries) {
   const out = [];
   let working = null;
+  let raw = 0, blocked = 0, noAsk = 0, lowScore = 0, dupes = 0;
 
   for (const q of queries) {
     if (!budget.ok(4000)) { log("web search: out of time"); break; }
@@ -610,11 +618,15 @@ async function scrapeWeb(seen, budget, log, queries) {
 
     if (!results || !results.length) continue;
 
+    raw += results.length;
     for (const item of results) {
-      if (!item.link || seen[item.link] || !googleUseful(item)) continue;
+      if (!item.link) continue;
+      if (seen[item.link]) { dupes++; continue; }
       const blob = `${item.title} ${item.snippet || ""}`;
       const [pts, hits] = score(blob);
-      if (pts < 5) continue;
+      const why = googleUseful(item, pts);
+      if (why) { why === "blocked domain" ? blocked++ : noAsk++; continue; }
+      if (pts < 4) { lowScore++; continue; }
       seen[item.link] = 1;
 
       let host = "";
@@ -635,7 +647,12 @@ async function scrapeWeb(seen, budget, log, queries) {
     }
   }
 
-  if (!working) log("web search: all providers blocked from this server");
+  if (!working) {
+    log("web search: all providers blocked from this server");
+  } else {
+    log(`web: ${raw} results -> ${out.length} kept ` +
+        `(${blocked} ad sites, ${noAsk} not asking, ${lowScore} low score, ${dupes} seen before)`);
+  }
   return out;
 }
 
@@ -748,7 +765,7 @@ async function runScrape({ budgetMs = 22000 } = {}) {
   const cCombos = triples(CL_SITES, CL_SECTIONS, CL_QUERIES);
 
   // 3. Google - the only source that reaches homeowners asking publicly.
-  fresh = fresh.concat(await scrapeWeb(seen, budget, say, slice(GOOGLE_QUERIES, state.cursor * 2, 2)));
+  fresh = fresh.concat(await scrapeWeb(seen, budget, say, slice(GOOGLE_QUERIES, state.cursor * 4, 4)));
   fresh = fresh.concat(await scrapeAlerts(seen, budget, say));
 
   // Reddit removed: the API now requires registering an automated account, and
