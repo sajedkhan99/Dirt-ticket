@@ -378,103 +378,143 @@ async function scrapeBids(seen, budget, log) {
   return out;
 }
 
-// --- reddit -----------------------------------------------------------------
+// --- google -----------------------------------------------------------------
+// Google's OFFICIAL Programmable Search JSON API. Scraping google.com/search
+// gets you CAPTCHAs and a ToS violation; this is the sanctioned route and the
+// free tier is 100 queries/day.
+//
+// Setup (5 min, no billing required):
+//   1. programmablesearchengine.google.com -> Add -> "Search the entire web"
+//      Copy the Search engine ID  -> env GOOGLE_CX
+//   2. console.cloud.google.com -> APIs -> enable "Custom Search API"
+//      -> Credentials -> Create API key -> env GOOGLE_KEY
+//
+// Optional, zero-setup alternative: create Google Alerts for these phrases,
+// choose "Deliver to: RSS feed", and paste the feed URLs comma-separated into
+// env GOOGLE_ALERT_FEEDS. Both sources can run at once.
 
-const REDDIT_SUBS = [
-  "Dallas", "FortWorth", "dfw", "Plano", "Frisco", "McKinney", "Denton",
-  "Arlington", "Irving", "HomeImprovement", "landscaping", "Construction",
-  "Hardscaping", "pools", "homeowners",
+// Phrases a HOMEOWNER types, not a contractor. Quoted so Google matches exactly.
+const GOOGLE_QUERIES = [
+  '"need a retaining wall" (Dallas OR "Fort Worth" OR Frisco OR McKinney OR Plano)',
+  '"looking for" "retaining wall" contractor DFW recommendations',
+  '"retaining wall" "falling over" OR "washing out" Dallas Texas',
+  '"who does retaining walls" Texas',
+  '"need dirt hauled" OR "haul off dirt" Dallas Texas',
+  '"recommendations for" "retaining wall" north Texas',
 ];
-const GENERAL_SUBS = new Set(["HomeImprovement", "landscaping", "Construction",
-  "Hardscaping", "pools", "homeowners"]);
-const REDDIT_QUERIES = ["retaining wall", "dirt work", "excavation", "grading contractor"];
 
-let tokenCache = { value: null, expires: 0 };
+// Junk domains - supply-side pages, not people asking for work.
+const GOOGLE_BLOCK = [
+  "yelp.com", "angi.com", "homeadvisor.com", "thumbtack.com", "houzz.com/professionals",
+  "yellowpages", "bbb.org", "porch.com", "buildzoom", "expertise.com", "birdeye",
+  "facebook.com/marketplace", "amazon.com", "homedepot.com", "lowes.com",
+  "pinterest.", "youtube.com", "wikipedia.org", "indeed.com", "ziprecruiter",
+];
 
-async function redditToken(log) {
-  const id = process.env.REDDIT_ID, secret = process.env.REDDIT_SECRET;
-  if (!id || !secret) return null;
-  if (tokenCache.value && Date.now() < tokenCache.expires) return tokenCache.value;
-
-  // Trim: pasting into a dashboard very often carries a trailing space or newline.
-  const cid = id.trim(), csec = secret.trim();
-
-  try {
-    const r = await fetch("https://www.reddit.com/api/v1/access_token", {
-      method: "POST",
-      headers: {
-        Authorization: "Basic " + Buffer.from(`${cid}:${csec}`).toString("base64"),
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": UA,
-      },
-      body: "grant_type=client_credentials",
-    });
-
-    const raw = await r.text();
-    if (!r.ok) {
-      log?.(`reddit auth HTTP ${r.status}: ${raw.slice(0, 120)}`);
-      if (r.status === 401) log?.("reddit: 401 = wrong id/secret, or the app type is not 'script'");
-      if (r.status === 403) log?.("reddit: 403 = Reddit blocked this datacenter IP at the token endpoint");
-      if (r.status === 429) log?.("reddit: 429 = rate limited, try again in a few minutes");
-      return null;
-    }
-
-    const d = JSON.parse(raw);
-    if (!d.access_token) {
-      log?.(`reddit auth returned no token: ${raw.slice(0, 120)}`);
-      return null;
-    }
-    tokenCache = { value: d.access_token, expires: Date.now() + (d.expires_in || 3600) * 900 };
-    log?.("reddit: authenticated");
-    return tokenCache.value;
-  } catch (e) {
-    log?.(`reddit auth threw: ${e.message}`);
-    return null;
-  }
+function googleUseful(item) {
+  const url = (item.link || "").toLowerCase();
+  if (GOOGLE_BLOCK.some((b) => url.includes(b))) return false;
+  // a page that lists services is supply; a page where someone ASKS is demand
+  const blob = `${item.title || ""} ${item.snippet || ""}`.toLowerCase();
+  const asking = ["need", "looking for", "recommend", "anyone know", "help", "quote",
+                  "advice", "who does", "suggestions", "washing out", "falling"];
+  return asking.some((a) => blob.includes(a));
 }
 
-async function scrapeReddit(seen, budget, log, pairs) {
-  const haveId = !!process.env.REDDIT_ID, haveSec = !!process.env.REDDIT_SECRET;
-  const tok = await redditToken(log);
-  if (!tok) {
-    log(`reddit: no token — REDDIT_ID ${haveId ? "present" : "MISSING"}, REDDIT_SECRET ${haveSec ? "present" : "MISSING"}`);
-
+async function scrapeGoogle(seen, budget, log, queries) {
+  const key = process.env.GOOGLE_KEY, cx = process.env.GOOGLE_CX;
+  if (!key || !cx) {
+    log("google: set GOOGLE_KEY and GOOGLE_CX to enable (free, 100 queries/day)");
+    return [];
   }
+
   const out = [];
+  for (const q of queries) {
+    if (!budget.ok(3000)) { log("google: out of time"); break; }
+    const url = "https://www.googleapis.com/customsearch/v1"
+      + `?key=${key}&cx=${cx}&q=${encodeURIComponent(q)}&num=10&dateRestrict=m3`;
 
-  for (const [sub, q] of pairs) {
-    if (!budget.ok(3000)) { log("reddit: out of time"); break; }
-    const path = `/r/${sub}/search.json?q=${encodeURIComponent(q)}&restrict_sr=1&sort=new&t=month&limit=25`;
     let data;
-    try {
-      data = tok
-        ? await get("https://oauth.reddit.com" + path, { headers: { Authorization: `Bearer ${tok}` } })
-        : await get("https://www.reddit.com" + path);
-    } catch (e) { log(`r/${sub} "${q}": ${e.message}`); continue; }
+    try { data = await get(url); }
+    catch (e) {
+      log(`google "${q.slice(0, 28)}…": ${e.message}`);
+      if (e.message === "429") { log("google: daily free quota used up"); break; }
+      if (e.message === "403") { log("google: 403 — API key invalid or Custom Search API not enabled"); break; }
+      continue;
+    }
 
-    for (const child of data?.data?.children || []) {
-      const p = child.data || {};
-      const url = "https://www.reddit.com" + (p.permalink || "");
-      if (!p.title || seen[url]) continue;
-      const blob = `${p.title} ${(p.selftext || "").slice(0, 400)}`;
-      if (GENERAL_SUBS.has(sub) && !DFW_PLACES.some((pl) => blob.toLowerCase().includes(pl))) continue;
+    for (const item of data.items || []) {
+      if (seen[item.link] || !googleUseful(item)) continue;
+      const blob = `${item.title} ${item.snippet || ""}`;
       const [pts, hits] = score(blob);
       if (pts < 5) continue;
-      seen[url] = 1;
+      seen[item.link] = 1;
+
+      let host = "";
+      try { host = new URL(item.link).hostname.replace("www.", ""); } catch {}
+
       out.push({
-        id: leadId(url, p.title),
-        title: p.title,
-        snippet: (p.selftext || "").replace(/\s+/g, " ").slice(0, 280),
+        id: leadId(item.link, item.title),
+        title: item.title.slice(0, 130),
+        snippet: (item.snippet || "").replace(/\s+/g, " ").slice(0, 280),
         body: [
-          `Posted by u/${p.author || "unknown"} in r/${sub}`,
-          p.num_comments ? `${p.num_comments} comment(s)` : "",
+          item.snippet || "",
           "",
-          (p.selftext || "").slice(0, 4000) || "(no post text — title only)",
-        ].filter(Boolean).join("\n"),
-        url,
-        source: "Reddit",
+          `Source page: ${host}`,
+          `Found via Google search: ${q}`,
+        ].join("\n"),
+        url: item.link,
+        source: "Google",
         location: guessLocation(blob),
-        posted: new Date((p.created_utc || Date.now() / 1000) * 1000).toISOString(),
+        posted: new Date().toISOString(),
+        score: pts,
+        matched: hits,
+      });
+    }
+  }
+  return out;
+}
+
+// Google Alerts RSS - free, no API key, no quota. Paste feed URLs into
+// GOOGLE_ALERT_FEEDS (comma separated) and these run automatically.
+async function scrapeAlerts(seen, budget, log) {
+  const feeds = (process.env.GOOGLE_ALERT_FEEDS || "").split(",").map(f => f.trim()).filter(Boolean);
+  if (!feeds.length) return [];
+
+  const out = [];
+  for (const feed of feeds) {
+    if (!budget.ok(3000)) break;
+    let xml;
+    try { xml = await get(feed, { json: false }); }
+    catch (e) { log(`alerts feed: ${e.message}`); continue; }
+
+    for (const entry of xml.match(/<entry[\s\S]*?<\/entry>/g) || []) {
+      const t = (n) => {
+        const m = entry.match(new RegExp(`<${n}[^>]*>([\\s\\S]*?)</${n}>`));
+        return m ? m[1].replace(/<[^>]+>/g, "").trim() : "";
+      };
+      const linkM = entry.match(/<link[^>]*href="([^"]+)"/);
+      let link = linkM ? linkM[1] : "";
+      // Alerts wrap the real URL in a redirect
+      const realM = link.match(/[?&]url=([^&]+)/);
+      if (realM) link = decodeURIComponent(realM[1]);
+
+      const title = t("title");
+      if (!title || !link || seen[link]) continue;
+      const blob = `${title} ${t("content")}`;
+      const [pts, hits] = score(blob);
+      if (pts < 5) continue;
+      seen[link] = 1;
+
+      out.push({
+        id: leadId(link, title),
+        title: title.slice(0, 130),
+        snippet: t("content").replace(/\s+/g, " ").slice(0, 280),
+        body: t("content").replace(/\s+/g, " ").slice(0, 1500),
+        url: link,
+        source: "Google",
+        location: guessLocation(blob),
+        posted: t("published") || new Date().toISOString(),
         score: pts,
         matched: hits,
       });
@@ -588,11 +628,16 @@ async function runScrape({ budgetMs = 22000 } = {}) {
   // 2. Public bids — one request, always worth it.
   fresh = fresh.concat(await scrapeBids(seen, budget, say));
 
-  // 3. Reddit and Craigslist, sharded so each run stays inside the budget.
-  const rPairs = pairs(REDDIT_SUBS, REDDIT_QUERIES);
+  // 3. Craigslist, sharded so each run stays inside the budget.
   const cCombos = triples(CL_SITES, CL_SECTIONS, CL_QUERIES);
 
-  fresh = fresh.concat(await scrapeReddit(seen, budget, say, slice(rPairs, state.cursor * 4, 4)));
+  // 3. Google - the only source that reaches homeowners asking publicly.
+  fresh = fresh.concat(await scrapeGoogle(seen, budget, say, slice(GOOGLE_QUERIES, state.cursor * 2, 2)));
+  fresh = fresh.concat(await scrapeAlerts(seen, budget, say));
+
+  // Reddit removed: the API now requires registering an automated account, and
+  // it 403s every anonymous request from a datacenter IP. Not worth the hoops
+  // for a secondary source. Everything below still works without it.
   // Craigslist 403s every request from a datacenter IP and there is no auth
   // path around it. Off by default; set CRAIGSLIST=1 to try anyway.
   if (process.env.CRAIGSLIST === "1") {
