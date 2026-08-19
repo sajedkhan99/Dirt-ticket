@@ -543,6 +543,22 @@ async function scrapeAlerts(seen, budget, log) {
 // Three providers are tried in order; the first that answers wins, and the log
 // says which one worked so there is no guessing.
 
+function unwrapBing(link) {
+  try {
+    const u = new URL(link);
+    if (!u.hostname.includes("bing.com")) return link;
+    const p = u.searchParams.get("u");
+    if (!p) return link;
+    let b = p.startsWith("a1") ? p.slice(2) : p;
+    b = b.replace(/-/g, "+").replace(/_/g, "/");
+    while (b.length % 4) b += "=";
+    const decoded = Buffer.from(b, "base64").toString("utf8");
+    return decoded.startsWith("http") ? decoded : link;
+  } catch {
+    return link;
+  }
+}
+
 async function searchBing(q) {
   // Bing still serves any search as RSS. No key, no quota, no account.
   const xml = await get(
@@ -559,7 +575,8 @@ async function searchBing(q) {
                  .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
                  .trim();
     };
-    const title = tag("title"), link = tag("link"), snippet = tag("description");
+    const title = tag("title"), snippet = tag("description");
+    const link = unwrapBing(tag("link"));
     if (title && link) out.push({ title, link, snippet });
   }
   return out;
@@ -601,7 +618,7 @@ const PROVIDERS = [
 async function scrapeWeb(seen, budget, log, queries) {
   const out = [];
   let working = null;
-  let raw = 0, blocked = 0, noAsk = 0, lowScore = 0, dupes = 0;
+  let raw = 0, blocked = 0, noAsk = 0, lowScore = 0, dupes = 0, sampled = false;
 
   for (const q of queries) {
     if (!budget.ok(4000)) { log("web search: out of time"); break; }
@@ -627,6 +644,13 @@ async function scrapeWeb(seen, budget, log, queries) {
     if (!results || !results.length) continue;
 
     raw += results.length;
+    if (!sampled && results.length) {
+      sampled = true;
+      const hosts = results.slice(0, 3).map((r) => {
+        try { return new URL(r.link).hostname.replace("www.", ""); } catch { return "?"; }
+      });
+      log(`sample hosts: ${hosts.join(", ")}`);
+    }
     for (const item of results) {
       if (!item.link) continue;
       if (seen[item.link]) { dupes++; continue; }
