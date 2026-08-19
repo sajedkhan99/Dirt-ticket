@@ -199,7 +199,11 @@ async function scrapePermits(seen, budget, log, datasets, dead = {}) {
   const out = [];
   for (const src of datasets) {
     if (dead[src.domain + src.dataset]) continue;
-    if (isArchive(src.label)) { log(`skipping archive: ${src.label}`); continue; }
+    if (isArchive(src.label)) {
+      log(`retiring archive: ${src.label}`);
+      dead[src.domain + src.dataset] = 1;
+      continue;
+    }
     if (!budget.ok(5000)) { log("permits: out of time"); break; }
     const { city, domain, dataset } = src;
 
@@ -387,32 +391,54 @@ const REDDIT_QUERIES = ["retaining wall", "dirt work", "excavation", "grading co
 
 let tokenCache = { value: null, expires: 0 };
 
-async function redditToken() {
+async function redditToken(log) {
   const id = process.env.REDDIT_ID, secret = process.env.REDDIT_SECRET;
   if (!id || !secret) return null;
   if (tokenCache.value && Date.now() < tokenCache.expires) return tokenCache.value;
+
+  // Trim: pasting into a dashboard very often carries a trailing space or newline.
+  const cid = id.trim(), csec = secret.trim();
+
   try {
     const r = await fetch("https://www.reddit.com/api/v1/access_token", {
       method: "POST",
       headers: {
-        Authorization: "Basic " + Buffer.from(`${id}:${secret}`).toString("base64"),
+        Authorization: "Basic " + Buffer.from(`${cid}:${csec}`).toString("base64"),
         "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent": UA,
       },
       body: "grant_type=client_credentials",
     });
-    const d = await r.json();
+
+    const raw = await r.text();
+    if (!r.ok) {
+      log?.(`reddit auth HTTP ${r.status}: ${raw.slice(0, 120)}`);
+      if (r.status === 401) log?.("reddit: 401 = wrong id/secret, or the app type is not 'script'");
+      if (r.status === 403) log?.("reddit: 403 = Reddit blocked this datacenter IP at the token endpoint");
+      if (r.status === 429) log?.("reddit: 429 = rate limited, try again in a few minutes");
+      return null;
+    }
+
+    const d = JSON.parse(raw);
+    if (!d.access_token) {
+      log?.(`reddit auth returned no token: ${raw.slice(0, 120)}`);
+      return null;
+    }
     tokenCache = { value: d.access_token, expires: Date.now() + (d.expires_in || 3600) * 900 };
+    log?.("reddit: authenticated");
     return tokenCache.value;
-  } catch { return null; }
+  } catch (e) {
+    log?.(`reddit auth threw: ${e.message}`);
+    return null;
+  }
 }
 
 async function scrapeReddit(seen, budget, log, pairs) {
   const haveId = !!process.env.REDDIT_ID, haveSec = !!process.env.REDDIT_SECRET;
-  const tok = await redditToken();
+  const tok = await redditToken(log);
   if (!tok) {
     log(`reddit: no token — REDDIT_ID ${haveId ? "present" : "MISSING"}, REDDIT_SECRET ${haveSec ? "present" : "MISSING"}`);
-    if (haveId && haveSec) log("reddit: creds present but auth failed — check for a typo or a stray space");
+
   }
   const out = [];
 
@@ -549,11 +575,15 @@ async function runScrape({ budgetMs = 22000 } = {}) {
   let fresh = [];
 
   // 1. Permits first — highest value per request. Two datasets per run.
-  const ds = slice(state.datasets, state.dsCursor, 4);
-  state.dsCursor = (state.dsCursor + 4) % Math.max(state.datasets.length, 1);
+  // Only rotate through datasets that are still alive, or a run can spend all
+  // its budget skipping retired archives and scrape nothing.
+  const alive = (state.datasets || []).filter(
+    (d) => !state.dead[d.domain + d.dataset] && !isArchive(d.label)
+  );
+  const ds = slice(alive, state.dsCursor, 4);
+  state.dsCursor = alive.length ? (state.dsCursor + 4) % alive.length : 0;
   fresh = fresh.concat(await scrapePermits(seen, budget, say, ds, state.dead));
-  const liveLeft = (state.datasets || []).filter((d) => !state.dead[d.domain + d.dataset]).length;
-  say(`${liveLeft} permit dataset(s) still live`);
+  say(`${alive.length} live permit dataset(s), ${(state.datasets || []).length - alive.length} retired`);
 
   // 2. Public bids — one request, always worth it.
   fresh = fresh.concat(await scrapeBids(seen, budget, say));
